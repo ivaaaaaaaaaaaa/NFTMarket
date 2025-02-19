@@ -36,6 +36,16 @@ contract CollectionFactory is Ownable {
     mapping(address => CollectionInfo[]) public collectionsByCreator;
 
 
+    event CreateNewCollection(
+        string name,
+        string symbol,
+        address indexed collectionOwner,
+        string indexed collectionURI,
+        uint price,
+        address indexed collectionAddress
+    );
+
+
     /**
      * @dev this is function create a new collection NFT
      * @param _name NFT name
@@ -66,6 +76,15 @@ contract CollectionFactory is Ownable {
         uint currentCounter = addressCounter[msg.sender];
         addressCollectionById[msg.sender][currentCounter] = collectionAddress;
         addressCounter[msg.sender]++;
+
+        emit CreateNewCollection(
+          _name,
+          _symbol,
+          msg.sender,
+          _collectionURI,
+          _price,
+          collectionAddress 
+        );
     }
 
     /**
@@ -150,6 +169,9 @@ contract ERC721NewCollection is ERC721 {
         return price;
     }
 
+    function getTokenCounter() public view returns(uint256){
+        return tokenCounter;
+    }
 }
 
 
@@ -162,6 +184,21 @@ contract Buy is CollectionFactory {
  mapping (address user => mapping( bytes10 promo => uint256 tokenId )) public promo;
  mapping (bytes10 promo => bool use) public promoUseAlredy;
 
+ event NFTPurchased(
+    uint indexed tokenId,
+    address indexed buyer,
+    address indexed collectionAddress,
+    uint256 price,
+    bytes10 promo
+ );
+
+ event reedemPromoCode(
+    address indexed user,
+    address indexed collectionAddress,
+    bytes10 promoCode,
+    uint256 tokenId
+ );
+
  bytes10 public promik; // пока что для сохранения промокода используем переменную для просмотра реализации (ИЗМЕНИТЬ)
  
  constructor(address initialOwner) CollectionFactory(initialOwner){}
@@ -169,6 +206,8 @@ contract Buy is CollectionFactory {
  error EnoughFuns(uint price, uint getPrice);
  error PromoUsedAlredy(bool used);
  error InvalidPromo();
+ error ZeroCollectionAddress();
+ error TokenNotExsist();
  
  /**
   * @dev в этой функции человек совершает покупку товара
@@ -177,13 +216,26 @@ contract Buy is CollectionFactory {
   * @notice суть в том, что человек покупает, но еще не получает товар, по приезду товара к нему
   * @notice придет (или как то иначе) код, и только после его активации пользовотель сминтит NFT
   */
- function buyNFT( address collectionAddress, uint256 tokenId ) public payable  {
+ function buyNFT( address collectionAddress, uint256 tokenId ) public payable {
+    require(collectionAddress != address(0), ZeroCollectionAddress());
     ERC721NewCollection collection = ERC721NewCollection(collectionAddress);
+    
+    uint256 tokenCounter = collection.getTokenCounter();
+    require(tokenCounter<= tokenId, TokenNotExsist());
+    
     uint256 price = collection.getPrice();
     require(msg.value >= price , EnoughFuns(price, msg.value));
+    
     bytes10 promoCode = bytes10(keccak256(abi.encode(block.timestamp))); // для получения промокода хэшируем время транзакции, что бы его было почти невозможно получить
     promik = promoCode;
     promo[msg.sender][promoCode] = tokenId;
+    emit NFTPurchased(
+        tokenId,
+        msg.sender,
+        collectionAddress,
+        price,
+        promoCode
+    );
  }
  
  /**
@@ -197,5 +249,12 @@ contract Buy is CollectionFactory {
  require(promo[msg.sender][promoCode] > 0, InvalidPromo());
  promoUseAlredy[promoCode] = true;
  collection.mint(msg.sender);
+ emit reedemPromoCode(
+    msg.sender,
+    collectionAddress,
+    promoCode,
+    promo[msg.sender][promoCode]
+ );
+
  }
 }
